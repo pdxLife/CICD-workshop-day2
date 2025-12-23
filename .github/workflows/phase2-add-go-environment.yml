@@ -1,0 +1,47 @@
+# Phase 2: Add Go Environment
+# Goal: Setup Go environment and install dependencies
+
+name: Phase 2 - Add Go Environment
+
+on:
+  # Temporarily disabled - enable manually via workflow_dispatch
+  # push:
+  #   branches: [ main, phase2 ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  setup-go:
+    name: Setup Go Environment
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.5'
+          cache: true
+          
+      - name: ✅ Verify Go installation
+        run: |
+          echo "Go version:"
+          go version
+          echo ""
+          echo "Go environment:"
+          go env
+          
+      - name: 📥 Download dependencies
+        run: |
+          echo "Downloading Go dependencies..."
+          go mod download
+          go mod verify
+          echo "✅ Dependencies installed successfully!"
+          
+      - name: 📋 List dependencies
+        run: |
+          echo "Go modules:"
+          go list -m all

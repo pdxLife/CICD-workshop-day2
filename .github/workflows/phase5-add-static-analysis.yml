@@ -1,0 +1,100 @@
+# Phase 5: Add Static Code Analysis
+# Goal: Check code quality using linters
+
+name: Phase 5 - Add Static Analysis
+
+on:
+  # Temporarily disabled - enable manually via workflow_dispatch
+  # push:
+  #   branches: [ main, phase5 ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: GoWebApp
+
+jobs:
+  quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.5'
+          cache: true
+          
+      - name: 📥 Install dependencies
+        run: |
+          echo "📥 Installing Go dependencies..."
+          go mod download
+          go mod verify
+          
+      - name: 🔍 Run golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.55.2
+          args: --timeout=5m ./cmd/...
+          
+      - name: 🔍 Run go vet
+        run: |
+          echo "🔍 Running go vet..."
+          go vet ./cmd/...
+          echo "✅ go vet passed!"
+          
+      - name: 🔍 Check code formatting
+        run: |
+          echo "🔍 Checking code formatting..."
+          UNFORMATTED=$(gofmt -l cmd/)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "❌ Unformatted files found:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+          echo "✅ All files are properly formatted!"
+          
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building Go application..."
+          mkdir -p bin
+          
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S_UTC')
+          BUILD_NUMBER=${{ github.run_number }}
+          
+          go build -v \
+            -ldflags="-X main.version=1.0.${BUILD_NUMBER} -X main.commit=${COMMIT_SHA} -X main.buildTime=${BUILD_TIME}" \
+            -o bin/${PROJECT_NAME} \
+            ./cmd/webapp
+          
+          echo "✅ Build completed successfully!"
+          ls -lh bin/${PROJECT_NAME}
+          
+      - name: 🧪 Run tests with coverage
+        run: |
+          echo "🧪 Running unit tests with coverage..."
+          mkdir -p test-reports
+          
+          go test -v -coverprofile=coverage.out -covermode=atomic ./cmd/... 2>&1 | tee test-output.txt
+          
+          echo ""
+          echo "📊 Coverage Summary:"
+          go tool cover -func=coverage.out | tail -n 1
+          
+      - name: 📈 Generate coverage report
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          
+      - name: 📤 Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30

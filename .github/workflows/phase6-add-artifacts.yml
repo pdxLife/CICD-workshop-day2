@@ -1,0 +1,197 @@
+# Phase 6: Add Artifacts
+# Goal: Create and upload build artifacts
+
+name: Phase 6 - Add Artifacts
+
+on:
+  # Temporarily disabled - enable manually via workflow_dispatch
+  # push:
+  #   branches: [ main, phase6 ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: GoWebApp
+
+jobs:
+  build-and-release:
+    name: Build and Create Artifacts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout source code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper versioning
+        
+      - name: 🔧 Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.5'
+          cache: true
+          
+      - name: 📥 Install dependencies
+        run: |
+          echo "📥 Installing Go dependencies..."
+          go mod download
+          go mod verify
+          
+      - name: 🔍 Run static analysis
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.55.2
+          args: --timeout=5m ./cmd/...
+          
+      - name: 🔍 Run go vet
+        run: |
+          echo "🔍 Running go vet..."
+          go vet ./cmd/...
+          
+      - name: 🔍 Check code formatting
+        run: |
+          echo "🔍 Checking code formatting..."
+          UNFORMATTED=$(gofmt -l cmd/)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "❌ Unformatted files: $UNFORMATTED"
+            exit 1
+          fi
+          echo "✅ All files are properly formatted!"
+          
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building Go application..."
+          mkdir -p bin
+          
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S_UTC')
+          BUILD_NUMBER=${{ github.run_number }}
+          
+          go build -v \
+            -ldflags="-X main.version=1.0.${BUILD_NUMBER} -X main.commit=${COMMIT_SHA} -X main.buildTime=${BUILD_TIME}" \
+            -o bin/${PROJECT_NAME} \
+            ./cmd/webapp
+          
+          echo "✅ Build completed successfully!"
+          ls -lh bin/${PROJECT_NAME}
+          
+      - name: 🧪 Run tests with coverage
+        run: |
+          echo "🧪 Running unit tests with coverage..."
+          mkdir -p test-reports
+          
+          go test -v -coverprofile=coverage.out -covermode=atomic ./cmd/... 2>&1 | tee test-output.txt
+          
+          echo ""
+          echo "📊 Coverage Summary:"
+          go tool cover -func=coverage.out | tail -n 1
+          
+          # Generate HTML coverage report
+          go tool cover -html=coverage.out -o coverage.html
+          
+      - name: 📦 Create artifacts
+        run: |
+          echo "📦 Creating build artifacts..."
+          mkdir -p artifacts
+          
+          # Copy binary
+          cp bin/${PROJECT_NAME} artifacts/
+          
+          # Copy coverage reports
+          cp coverage.out coverage.html artifacts/
+          
+          # Get build metadata
+          COMMIT_SHA=$(git rev-parse HEAD)
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          BRANCH=$(git branch --show-current || echo 'main')
+          BUILD_NUMBER=${{ github.run_number }}
+          RUN_ID=${{ github.run_id }}
+          WORKFLOW="${{ github.workflow }}"
+          ACTOR="${{ github.actor }}"
+          
+          # Create build info JSON using jq for proper JSON formatting
+          jq -n \
+            --arg version "1.0.${BUILD_NUMBER}" \
+            --arg commit "${COMMIT_SHA}" \
+            --arg commit_short "${COMMIT_SHORT}" \
+            --arg branch "${BRANCH}" \
+            --arg build_time "$(date -u '+%Y-%m-%d %H:%M:%S UTC')" \
+            --arg build_number "${BUILD_NUMBER}" \
+            --arg run_id "${RUN_ID}" \
+            --arg workflow "${WORKFLOW}" \
+            --arg actor "${ACTOR}" \
+            '{
+              version: $version,
+              commit: $commit,
+              commit_short: $commit_short,
+              branch: $branch,
+              build_time: $build_time,
+              build_number: $build_number,
+              github_run_id: $run_id,
+              github_workflow: $workflow,
+              github_actor: $actor
+            }' > artifacts/build-info.json
+          
+          # Create run script
+          cat > artifacts/run.sh <<'RUNEOF'
+          #!/bin/bash
+          PORT=${PORT:-8090}
+          echo "Starting GoWebApp on port ${PORT}..."
+          ./GoWebApp
+          RUNEOF
+          chmod +x artifacts/run.sh
+          
+          # Create version file
+          echo "1.0.${BUILD_NUMBER}" > artifacts/version.txt
+          
+          # Create tarball
+          ARTIFACT_NAME="${PROJECT_NAME}-1.0.${BUILD_NUMBER}-${COMMIT_SHORT}.tar.gz"
+          tar -czf artifacts/${ARTIFACT_NAME} \
+            -C artifacts \
+            ${PROJECT_NAME} \
+            run.sh \
+            build-info.json \
+            version.txt \
+            coverage.out \
+            coverage.html
+          
+          echo ""
+          echo "✅ Artifacts created:"
+          ls -lh artifacts/
+          
+      - name: 📤 Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 90
+          
+      - name: 📤 Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.run_number }}
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
+          
+      - name: 📊 Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          
+      - name: ✅ Build summary
+        run: |
+          echo "✅ Pipeline completed successfully!"
+          echo ""
+          echo "📊 Build Summary:"
+          echo "  Build Number: ${{ github.run_number }}"
+          echo "  Commit: $(git rev-parse --short HEAD)"
+          echo "  Branch: $(git branch --show-current || echo 'main')"
+          echo "  Actor: ${{ github.actor }}"
+          echo "  Workflow: ${{ github.workflow }}"
+          echo ""
+          echo "📦 Artifacts available for download in GitHub Actions artifacts"

@@ -1,0 +1,88 @@
+# Phase 4: Add Tests
+# Goal: Run unit tests and generate reports
+
+name: Phase 4 - Add Tests
+
+on:
+  # Temporarily disabled - enable manually via workflow_dispatch
+  # push:
+  #   branches: [ main, phase4 ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: GoWebApp
+
+jobs:
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.5'
+          cache: true
+          
+      - name: 📥 Install dependencies
+        run: |
+          echo "📥 Installing Go dependencies..."
+          go mod download
+          go mod verify
+          
+      - name: 🧪 Run tests with coverage
+        run: |
+          echo "🧪 Running unit tests with coverage..."
+          mkdir -p test-reports
+          
+          # Run tests with coverage
+          go test -v -coverprofile=coverage.out -covermode=atomic ./cmd/... 2>&1 | tee test-output.txt
+          
+          echo ""
+          echo "📊 Coverage Summary:"
+          go tool cover -func=coverage.out | tail -n 1
+          
+      - name: 📈 Generate coverage report
+        run: |
+          echo "📈 Generating HTML coverage report..."
+          go tool cover -html=coverage.out -o coverage.html
+          echo "✅ Coverage report generated!"
+          
+      - name: 📊 Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          
+      - name: 📤 Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.out
+            coverage.html
+          retention-days: 30
+          
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building Go application..."
+          mkdir -p bin
+          
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S_UTC')
+          BUILD_NUMBER=${{ github.run_number }}
+          
+          go build -v \
+            -ldflags="-X main.version=1.0.${BUILD_NUMBER} -X main.commit=${COMMIT_SHA} -X main.buildTime=${BUILD_TIME}" \
+            -o bin/${PROJECT_NAME} \
+            ./cmd/webapp
+          
+          echo "✅ Build completed successfully!"
+          ls -lh bin/${PROJECT_NAME}

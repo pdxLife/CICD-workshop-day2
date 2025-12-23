@@ -1,0 +1,70 @@
+# Phase 3: Add Build
+# Goal: Build the Go application
+
+name: Phase 3 - Add Build
+
+on:
+  # Temporarily disabled - enable manually via workflow_dispatch
+  # push:
+  #   branches: [ main, phase3 ]
+  # pull_request:
+  #   branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PROJECT_NAME: GoWebApp
+
+jobs:
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📦 Checkout source code
+        uses: actions/checkout@v4
+        
+      - name: 🔧 Setup Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.5'
+          cache: true
+          
+      - name: 📥 Install dependencies
+        run: |
+          echo "📥 Installing Go dependencies..."
+          go mod download
+          go mod verify
+          echo "✅ Dependencies installed!"
+          
+      - name: 🔨 Build application
+        run: |
+          echo "🔨 Building Go application..."
+          mkdir -p bin
+          
+          # Get build metadata
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          BUILD_TIME=$(date -u '+%Y-%m-%d_%H:%M:%S_UTC')
+          BUILD_NUMBER=${{ github.run_number }}
+          
+          echo "Build metadata:"
+          echo "  Version: 1.0.${BUILD_NUMBER}"
+          echo "  Commit: ${COMMIT_SHA}"
+          echo "  Build time: ${BUILD_TIME}"
+          
+          # Build with metadata
+          go build -v \
+            -ldflags="-X main.version=1.0.${BUILD_NUMBER} -X main.commit=${COMMIT_SHA} -X main.buildTime=${BUILD_TIME}" \
+            -o bin/${PROJECT_NAME} \
+            ./cmd/webapp
+          
+          echo ""
+          echo "✅ Build completed successfully!"
+          ls -lh bin/${PROJECT_NAME}
+          
+      - name: 🧪 Verify binary
+        run: |
+          echo "Checking binary..."
+          file bin/${PROJECT_NAME}
+          echo ""
+          echo "Binary size:"
+          du -h bin/${PROJECT_NAME}
