@@ -39,7 +39,7 @@ jobs:
         run: |
           echo "🧪 Running unit tests with coverage..."
           mkdir -p test-reports
-          
+          set -o pipefail
           # Run tests with coverage
           go test -v -coverprofile=coverage.out -covermode=atomic ./cmd/... 2>&1 | tee test-output.txt
           
